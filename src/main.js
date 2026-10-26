@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const { loadConfig, saveConfig, cachedUsage, isCacheFresh, isCustomId } = require('./config');
 const { stageIndex } = require('./evolution');
 const { buildIndex, koName } = require('./dex');
-const { syncDir, mergeDex, readPeers, writeOwn } = require('./dex-sync');
+const { syncDir, mergeDex, readPeers, ownedByOther, writeOwn } = require('./dex-sync');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
   nextFloor, reachedSlugs, pickLock: lockOf, reconcilePickedReset: reconcileOf, mergeStamps,
@@ -114,6 +114,11 @@ function dexSync(op, fn) {
 const isDexSlug = (slug) => Object.hasOwn(dexIndex.bySlug, slug);
 
 function persistDex() {
+  // 다른 Mac과 id가 겹쳤다 — 새 id로 바꾸면 그 Mac 파일은 남의 파일이 되어 아래에서 합쳐진다
+  if (dexSync('owner', (dir) => ownedByOther(dir, cfg.dexSyncId))) {
+    cfg.dexSyncId = crypto.randomUUID();
+    saveConfig(configFile(), cfg);
+  }
   let changed = dexSync('read', (dir) =>
     readPeers(dir, cfg.dexSyncId).reduce((c, peer) => mergeDex(cfg.dex, peer, isDexSlug) || c, false));
   if (syncDex()) changed = true;

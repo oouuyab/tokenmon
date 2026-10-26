@@ -54,6 +54,19 @@ function readPeers(dir, selfId) {
   return peers;
 }
 
+// 설정을 통째로 옮겨 온 Mac(마이그레이션 지원, 백업 복원)은 id까지 같다. 내 파일에
+// 다른 기기 이름이 적혀 있으면 그 기기가 쓰던 파일이니 호출한 쪽이 새 id로 갈라선다.
+function ownedByOther(dir, selfId, device = os.hostname()) {
+  let own;
+  try {
+    own = JSON.parse(fs.readFileSync(path.join(dir, fileName(selfId)), 'utf8'));
+  } catch (e) {
+    if (e.code && e.code !== 'ENOENT') throw e;
+    return false; // 아직 안 썼거나 받는 중이라 깨진 파일
+  }
+  return !!own && typeof own.device === 'string' && own.device !== device;
+}
+
 // 내용이 같으면 쓰지 않는다 — 폴링마다 iCloud 업로드가 일어나지 않게.
 // 다른 기기가 쓰다 만 파일을 읽지 않도록 임시 파일에 쓰고 이름을 바꾼다.
 function writeOwn(dir, selfId, dex, device = os.hostname()) {
@@ -73,5 +86,6 @@ module.exports = {
   syncDir,
   mergeDex,
   readPeers,
+  ownedByOther,
   writeOwn,
 };

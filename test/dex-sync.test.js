@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { syncDir, mergeDex, readPeers, writeOwn } = require('../src/dex-sync');
+const { syncDir, mergeDex, readPeers, ownedByOther, writeOwn } = require('../src/dex-sync');
 
 const known = new Set(['pichu', 'pikachu', 'raichu', 'eevee']);
 const isKnown = (s) => known.has(s);
@@ -86,6 +86,24 @@ test('readPeers: 깨진 파일·다른 이름의 파일은 건너뛴다', () => 
   fs.writeFileSync(path.join(dir, 'notes.json'), '{}');
   fs.writeFileSync(path.join(dir, 'dex-ok.json'), '{"seen":{"pichu":1}}');
   assert.deepEqual(readPeers(dir, 'me'), [{ seen: { pichu: 1 } }]);
+});
+
+test('ownedByOther: 내 파일에 다른 기기 이름이 있을 때만 true', () => {
+  const dir = tmpDir();
+  assert.equal(ownedByOther(dir, 'me', 'mac-a'), false); // 아직 안 씀
+  writeOwn(dir, 'me', empty(), 'mac-a');
+  assert.equal(ownedByOther(dir, 'me', 'mac-a'), false);
+  assert.equal(ownedByOther(dir, 'me', 'mac-b'), true);
+});
+
+test('ownedByOther: 깨졌거나 기기 이름이 없는 파일은 내 것으로 본다', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'dex-me.json'), '{half');
+  assert.equal(ownedByOther(dir, 'me', 'mac-a'), false);
+  fs.writeFileSync(path.join(dir, 'dex-me.json'), '{"seen":{}}');
+  assert.equal(ownedByOther(dir, 'me', 'mac-a'), false);
+  fs.writeFileSync(path.join(dir, 'dex-me.json'), 'null');
+  assert.equal(ownedByOther(dir, 'me', 'mac-a'), false);
 });
 
 test('syncDir: iCloud Drive가 없으면 null', () => {
