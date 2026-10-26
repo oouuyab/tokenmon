@@ -1,9 +1,11 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { loadConfig, saveConfig, cachedUsage, isCacheFresh, isCustomId } = require('./config');
 const { stageIndex } = require('./evolution');
 const { buildIndex, koName } = require('./dex');
+const { syncDir, mergeDex, readPeers, writeOwn } = require('./dex-sync');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
   nextFloor, reachedSlugs, pickLock: lockOf, reconcilePickedReset: reconcileOf, mergeStamps,
@@ -91,10 +93,35 @@ function syncDex() {
   return changed;
 }
 
+// 다른 Mac과 iCloud Drive로 도감을 나눈다. 실패해도 이 기기의 도감은 계속
+// 돌아야 하니 로그만 남기고, 같은 오류를 폴링마다 찍지 않게 바뀔 때만 남긴다.
+const dexSyncDir = syncDir();
+const dexSyncErrors = {};
+function dexSync(op, fn) {
+  if (!dexSyncDir || !cfg.dexSyncId) return false;
+  try {
+    const r = fn(dexSyncDir);
+    dexSyncErrors[op] = null;
+    return r;
+  } catch (e) {
+    const msg = String(e && e.message);
+    if (dexSyncErrors[op] !== msg) console.warn(`[dex-sync] ${op}: ${msg}`);
+    dexSyncErrors[op] = msg;
+    return false;
+  }
+}
+
+const isDexSlug = (slug) => Object.hasOwn(dexIndex.bySlug, slug);
+
 function persistDex() {
-  if (!syncDex()) return;
-  saveConfig(configFile(), cfg);
-  pushDex();
+  let changed = dexSync('read', (dir) =>
+    readPeers(dir, cfg.dexSyncId).reduce((c, peer) => mergeDex(cfg.dex, peer, isDexSlug) || c, false));
+  if (syncDex()) changed = true;
+  if (changed) {
+    saveConfig(configFile(), cfg);
+    pushDex();
+  }
+  dexSync('write', (dir) => writeOwn(dir, cfg.dexSyncId, cfg.dex));
 }
 
 let claudeBackoffUntil = 0; // usage API가 429를 주면 retry-after까지 조회 중단
@@ -361,6 +388,10 @@ function watchEvents() {
 app.whenReady().then(() => {
   if (app.dock) app.dock.hide();
   cfg = loadConfig(configFile());
+  if (!cfg.dexSyncId) {
+    cfg.dexSyncId = crypto.randomUUID();
+    saveConfig(configFile(), cfg);
+  }
   // 캐시가 지금 소스의 값일 때만 복원 (다른 소스 값이면 첫 폴링 때까지 비워둔다)
   const cached = cachedUsage(cfg);
   if (cached) {

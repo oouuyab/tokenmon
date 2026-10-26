@@ -25,6 +25,8 @@ const DEFAULTS = {
   dexFreeMode: false,
   // 도감 안내를 끝까지 봤는지
   dexOnboarded: false,
+  // iCloud Drive로 도감을 나눌 때 이 기기의 파일 이름 (dex-<id>.json). 처음 켤 때 만든다
+  dexSyncId: null,
 };
 
 // 소스별 캐시로 대체된 옛 필드 — 남아 있으면 헷갈리므로 읽을 때 걷어낸다
@@ -41,7 +43,7 @@ const CUSTOM_PREFIX = 'custom-';
 // 목록을 바꾸는 경로를 모두 IPC로 옮겨 메인 단독 소유가 된 뒤에 들어왔다.
 const MAIN_OWNED_KEYS = [
   'petPosition', 'usageCache', 'dex', 'activePickedResetAt', 'activePickedResetSource',
-  'dexEnabled', 'dexFreeMode', 'dexOnboarded',
+  'dexEnabled', 'dexFreeMode', 'dexOnboarded', 'dexSyncId',
   'monsters', 'activeMonster',
 ];
 
