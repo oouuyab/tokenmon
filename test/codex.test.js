@@ -60,3 +60,60 @@ test('fetchCodexWeekly: rate_limits 없는 최신 파일은 건너뛰고 이전 
   fs.utimesSync(path.join(dir, 'a.jsonl'), past, past);
   assert.equal(await fetchCodexWeekly(dir), 4);
 });
+
+// 주간 창이 어느 자리에 오는지는 플랜마다 다르다 — free는 primary에 주간 하나만 담는다
+const rlLine = (rate_limits) => JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', rate_limits } });
+
+test('free 플랜: 주간이 primary에 오고 secondary가 비어도 읽는다', () => {
+  const line = rlLine({
+    limit_id: 'codex', plan_type: 'free',
+    primary: { used_percent: 27, window_minutes: 10080, resets_at: 1774325923 },
+    secondary: null,
+  });
+  assert.deepEqual(usageFromJsonl(line), {
+    fiveHour: null,
+    weekly: { pct: 27, resetsAt: 1774325923000 },
+  });
+});
+
+test('유료 플랜: primary(300)=5시간, secondary(10080)=주간', () => {
+  const line = rlLine({
+    primary: { used_percent: 40, window_minutes: 300 },
+    secondary: { used_percent: 6, window_minutes: 10080 },
+  });
+  assert.deepEqual(usageFromJsonl(line), {
+    fiveHour: { pct: 40, resetsAt: null },
+    weekly: { pct: 6, resetsAt: null },
+  });
+});
+
+test('두 창이 모두 주간이면 primary를 쓴다', () => {
+  const line = rlLine({
+    primary: { used_percent: 27, window_minutes: 10080 },
+    secondary: { used_percent: 99, window_minutes: 10080 },
+  });
+  assert.equal(weeklyFromJsonl(line), 27);
+});
+
+test('최근 줄의 rate_limits가 전부 null이면 건너뛰고 이전 줄을 쓴다', () => {
+  const text = [
+    rlLine({ primary: { used_percent: 27, window_minutes: 10080 }, secondary: null }),
+    rlLine({ limit_id: 'codex', primary: null, secondary: null, credits: null, plan_type: 'unknown' }),
+  ].join('\n');
+  assert.equal(weeklyFromJsonl(text), 27);
+});
+
+test('window_minutes가 없으면 예전 자리 규칙 — secondary가 주간', () => {
+  const line = rlLine({
+    primary: { used_percent: 40 },
+    secondary: { used_percent: 6 },
+  });
+  assert.deepEqual(usageFromJsonl(line), {
+    fiveHour: { pct: 40, resetsAt: null },
+    weekly: { pct: 6, resetsAt: null },
+  });
+});
+
+test('window_minutes가 없고 primary만 있으면 주간을 못 찾아 null', () => {
+  assert.equal(weeklyFromJsonl(rlLine({ primary: { used_percent: 40 }, secondary: null })), null);
+});

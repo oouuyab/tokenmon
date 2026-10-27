@@ -60,7 +60,11 @@ Electron 앱 하나로, 메인 프로세스와 렌더러 창 네 개로 구성�
 | 소스 | 방법 | 주간 % 필드 |
 |---|---|---|
 | Claude | macOS Keychain `Claude Code-credentials` → accessToken → `GET https://api.anthropic.com/api/oauth/usage` (`anthropic-beta: oauth-2025-04-20`) | `seven_day.utilization` |
-| Codex | `~/.codex/sessions/**/*.jsonl` 중 수정 시각이 최근인 50개를 스캔 | `rate_limits.secondary.used_percent` (window_minutes=10080) |
+| Codex | `~/.codex/sessions/**/*.jsonl` 중 수정 시각이 최근인 50개를 스캔 | `rate_limits`의 `primary`/`secondary` 중 `window_minutes`가 주간인 창의 `used_percent` |
+
+Codex의 주간 창이 `primary`와 `secondary` 중 어디에 오는지는 **플랜마다 다릅니다.** 유료 플랜은 `primary`=5시간(300) / `secondary`=주간(10080)으로 보내지만, free 플랜은 주간 하나만 `primary`에 담고 `secondary`를 비웁니다. 그래서 자리가 아니라 `window_minutes`로 창을 판정합니다 — 하루(1440분) 이상이면 주간, 미만이면 5시간. `window_minutes`가 없는 구버전 로그만 예전 자리 규칙으로 되돌아갑니다.
+
+인증 방식에 따라 `rate_limits`가 통째로 비어 오기도 합니다. `plan_type`이 `unknown`이면 `primary`·`secondary`·`credits`가 전부 `null`이라 소진율을 얻을 수 없고, 이때는 값이 남아 있는 더 이전 파일로 넘어갑니다.
 
 에러 처리:
 
