@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { weeklyFromJsonl, usageFromJsonl, dropExpired, fetchCodexWeekly, fetchCodexUsage } = require('../src/usage/codex');
+const { weeklyFromJsonl, usageFromJsonl, dropExpired, codexSessionDirs, fetchCodexWeekly, fetchCodexUsage } = require('../src/usage/codex');
 
 const FIXTURE = [
   '{"timestamp":"t","type":"event_msg","payload":{"type":"agent_message"}}',
@@ -164,4 +164,54 @@ test('fetchCodexUsage: 아직 안 지난 스냅샷은 그대로 읽는다', asyn
     fiveHour: null,
     weekly: { pct: 10, resetsAt: future * 1000 },
   });
+});
+
+// Codex 홈이 CODEX_HOME으로 옮겨가 있으면 ~/.codex만 보다가 실제 세션을 통째로 놓친다
+test('codexSessionDirs: CODEX_HOME이 있으면 맨 앞에 오고 ~/.codex도 남는다', () => {
+  const prev = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = path.join(os.tmpdir(), 'fake-codex-home');
+  try {
+    const dirs = codexSessionDirs();
+    assert.equal(dirs[0], path.join(os.tmpdir(), 'fake-codex-home', 'sessions'));
+    assert.ok(dirs.includes(path.join(os.homedir(), '.codex', 'sessions')));
+  } finally {
+    if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
+  }
+});
+
+test('codexSessionDirs: CODEX_HOME이 없으면 ~/.codex가 첫 후보', () => {
+  const prev = process.env.CODEX_HOME;
+  delete process.env.CODEX_HOME;
+  try {
+    assert.equal(codexSessionDirs()[0], path.join(os.homedir(), '.codex', 'sessions'));
+  } finally {
+    if (prev !== undefined) process.env.CODEX_HOME = prev;
+  }
+});
+
+test('codexSessionDirs: 같은 경로를 두 번 담지 않는다', () => {
+  const prev = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = path.join(os.homedir(), '.codex');
+  try {
+    const dirs = codexSessionDirs();
+    assert.equal(new Set(dirs).size, dirs.length);
+  } finally {
+    if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
+  }
+});
+
+test('fetchCodexUsage: 후보 홈 중 하나가 없어도 나머지를 읽는다', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tokemon-codex-'));
+  const future = Math.floor(Date.now() / 1000) + 3600;
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), rlLine({
+    primary: { used_percent: 86, window_minutes: 10080, resets_at: future },
+    secondary: null,
+  }));
+  const prev = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = path.dirname(dir); // sessions 하위가 없는 홈
+  try {
+    assert.equal(await fetchCodexWeekly(dir), 86);
+  } finally {
+    if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
+  }
 });

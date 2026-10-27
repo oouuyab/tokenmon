@@ -58,18 +58,39 @@ function dropExpired(u, now = Date.now()) {
   return weekly ? { fiveHour: alive(u.fiveHour), weekly } : null;
 }
 
-async function fetchCodexUsage(sessionsDir = path.join(os.homedir(), '.codex', 'sessions')) {
-  let files;
+// Codex 홈은 ~/.codex 하나가 아니다. CODEX_HOME으로 홈을 옮겨 쓰는 런처가 있고(orca는
+// 계정마다 별도 홈을 만든다), 그러면 ~/.codex에는 옛날 세션만 남아 실제로 쓰는 세션을
+// 통째로 놓친다. 후보를 전부 훑어 그중 가장 최신 파일부터 본다.
+function codexSessionDirs() {
+  const home = os.homedir();
+  const dirs = [];
+  if (process.env.CODEX_HOME) dirs.push(path.join(process.env.CODEX_HOME, 'sessions'));
+  dirs.push(path.join(home, '.codex', 'sessions'));
+  const orca = path.join(home, 'Library', 'Application Support', 'orca', 'codex-accounts');
   try {
-    files = fs.readdirSync(sessionsDir, { recursive: true })
+    for (const acc of fs.readdirSync(orca)) dirs.push(path.join(orca, acc, 'home', 'sessions'));
+  } catch { /* orca를 안 쓰면 없는 게 정상 */ }
+  return [...new Set(dirs)];
+}
+
+// 없는 홈은 빈 목록으로 넘긴다 — 후보 중 하나가 없다고 나머지를 못 보면 안 된다
+function jsonlFiles(dir) {
+  try {
+    return fs.readdirSync(dir, { recursive: true })
       .filter((f) => f.endsWith('.jsonl'))
-      .map((f) => path.join(sessionsDir, f))
-      .map((f) => ({ f, mtime: fs.statSync(f).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, 50); // ponytail: 최근 50개만 스캔, 부족하면 늘리면 됨
+      .map((f) => path.join(dir, f))
+      .map((f) => ({ f, mtime: fs.statSync(f).mtimeMs }));
   } catch {
-    return null; // Codex 미설치
+    return [];
   }
+}
+
+async function fetchCodexUsage(sessionsDir) {
+  const dirs = sessionsDir ? [sessionsDir] : codexSessionDirs();
+  const files = dirs.flatMap(jsonlFiles)
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, 50); // ponytail: 최근 50개만 스캔, 부족하면 늘리면 됨
+  if (!files.length) return null; // Codex 미설치
   // 가장 최신 스냅샷이 만료됐으면 더 오래된 파일은 볼 것도 없다 — 전부 그보다 낡았다
   for (const { f } of files) {
     const u = usageFromJsonl(fs.readFileSync(f, 'utf8'));
@@ -82,4 +103,4 @@ async function fetchCodexWeekly(sessionsDir) {
   return (await fetchCodexUsage(sessionsDir))?.weekly.pct ?? null;
 }
 
-module.exports = { usageFromJsonl, weeklyFromJsonl, dropExpired, fetchCodexUsage, fetchCodexWeekly };
+module.exports = { usageFromJsonl, weeklyFromJsonl, dropExpired, codexSessionDirs, fetchCodexUsage, fetchCodexWeekly };
