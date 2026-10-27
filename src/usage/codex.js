@@ -47,6 +47,17 @@ function weeklyFromJsonl(text) {
   return usageFromJsonl(text)?.weekly.pct ?? null;
 }
 
+// 창이 리셋되면 그 전 사용률은 더 이상 사실이 아니다. Codex는 세션 로그를 지우지 않으므로
+// 며칠 전 파일이 그대로 남아 있고, 그걸 읽으면 만료된 수치를 현재값처럼 보여주게 된다.
+// resets_at이 지난 창은 값이 없는 것으로 본다. resets_at이 아예 없는 구버전 로그는
+// 만료를 판정할 근거가 없으므로 그대로 살려둔다.
+function dropExpired(u, now = Date.now()) {
+  if (!u) return null;
+  const alive = (w) => (w && (w.resetsAt == null || w.resetsAt > now)) ? w : null;
+  const weekly = alive(u.weekly);
+  return weekly ? { fiveHour: alive(u.fiveHour), weekly } : null;
+}
+
 async function fetchCodexUsage(sessionsDir = path.join(os.homedir(), '.codex', 'sessions')) {
   let files;
   try {
@@ -59,9 +70,10 @@ async function fetchCodexUsage(sessionsDir = path.join(os.homedir(), '.codex', '
   } catch {
     return null; // Codex 미설치
   }
+  // 가장 최신 스냅샷이 만료됐으면 더 오래된 파일은 볼 것도 없다 — 전부 그보다 낡았다
   for (const { f } of files) {
     const u = usageFromJsonl(fs.readFileSync(f, 'utf8'));
-    if (u) return u;
+    if (u) return dropExpired(u);
   }
   return null;
 }
@@ -70,4 +82,4 @@ async function fetchCodexWeekly(sessionsDir) {
   return (await fetchCodexUsage(sessionsDir))?.weekly.pct ?? null;
 }
 
-module.exports = { usageFromJsonl, weeklyFromJsonl, fetchCodexUsage, fetchCodexWeekly };
+module.exports = { usageFromJsonl, weeklyFromJsonl, dropExpired, fetchCodexUsage, fetchCodexWeekly };

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { weeklyFromJsonl, usageFromJsonl, fetchCodexWeekly } = require('../src/usage/codex');
+const { weeklyFromJsonl, usageFromJsonl, dropExpired, fetchCodexWeekly, fetchCodexUsage } = require('../src/usage/codex');
 
 const FIXTURE = [
   '{"timestamp":"t","type":"event_msg","payload":{"type":"agent_message"}}',
@@ -116,4 +116,52 @@ test('window_minutes가 없으면 예전 자리 규칙 — secondary가 주간',
 
 test('window_minutes가 없고 primary만 있으면 주간을 못 찾아 null', () => {
   assert.equal(weeklyFromJsonl(rlLine({ primary: { used_percent: 40 }, secondary: null })), null);
+});
+
+// 만료 판정 — 창이 리셋된 뒤의 옛 수치를 현재값처럼 보여주지 않기 위한 것
+const NOW = 1_700_000_000_000;
+
+test('dropExpired: 주간 resets_at이 지났으면 통째로 null', () => {
+  const u = { fiveHour: { pct: 40, resetsAt: NOW + 1000 }, weekly: { pct: 10, resetsAt: NOW - 1 } };
+  assert.equal(dropExpired(u, NOW), null);
+});
+
+test('dropExpired: 주간이 살아 있고 5시간만 만료면 5시간만 버린다', () => {
+  const u = { fiveHour: { pct: 40, resetsAt: NOW - 1 }, weekly: { pct: 10, resetsAt: NOW + 1000 } };
+  assert.deepEqual(dropExpired(u, NOW), { fiveHour: null, weekly: { pct: 10, resetsAt: NOW + 1000 } });
+});
+
+test('dropExpired: 둘 다 살아 있으면 그대로', () => {
+  const u = { fiveHour: { pct: 40, resetsAt: NOW + 1 }, weekly: { pct: 10, resetsAt: NOW + 2 } };
+  assert.deepEqual(dropExpired(u, NOW), u);
+});
+
+test('dropExpired: resets_at이 없으면 판정할 근거가 없으므로 살려둔다', () => {
+  const u = { fiveHour: null, weekly: { pct: 10, resetsAt: null } };
+  assert.deepEqual(dropExpired(u, NOW), u);
+});
+
+test('dropExpired: 입력이 null이면 null', () => assert.equal(dropExpired(null, NOW), null));
+
+test('fetchCodexUsage: 만료된 스냅샷만 있으면 null을 준다', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tokemon-codex-'));
+  const expired = Math.floor(Date.now() / 1000) - 60; // 1분 전에 리셋됨
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), rlLine({
+    primary: { used_percent: 10, window_minutes: 10080, resets_at: expired },
+    secondary: null,
+  }));
+  assert.equal(await fetchCodexUsage(dir), null);
+});
+
+test('fetchCodexUsage: 아직 안 지난 스냅샷은 그대로 읽는다', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tokemon-codex-'));
+  const future = Math.floor(Date.now() / 1000) + 3600;
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), rlLine({
+    primary: { used_percent: 10, window_minutes: 10080, resets_at: future },
+    secondary: null,
+  }));
+  assert.deepEqual(await fetchCodexUsage(dir), {
+    fiveHour: null,
+    weekly: { pct: 10, resetsAt: future * 1000 },
+  });
 });
