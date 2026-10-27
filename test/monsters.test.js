@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { buildIndex } = require('../src/dex');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, mergeStamps,
+  nextFloor, reachedSlugs, pickLock, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('../src/monsters');
 
@@ -152,6 +152,51 @@ test('pickLock: 아직 한 마리도 없으면 골라야 한다', () =>
   assert.equal(pickLock({ ...picked, activeMonster: null }, 1500).locked, false));
 test('pickLock: 리셋 시각을 모르면 막지 않는다', () =>
   assert.equal(pickLock({ ...picked, activePickedResetAt: null }, 1500).locked, false));
+
+const R1 = 2000;
+const R2 = R1 + 7 * 24 * 3600 * 1000;
+const lockedOn = (over) => ({ ...picked, source: 'claude', activePickedResetSource: 'claude', ...over });
+
+test('reconcilePickedReset: 고를 때 리셋 시각을 몰랐으면 새 조회값으로 채운다', () => {
+  const cfg = lockedOn({ activePickedResetAt: null });
+  assert.equal(reconcilePickedReset(cfg, R1, 1500), true);
+  assert.equal(cfg.activePickedResetAt, R1);
+  assert.equal(pickLock(cfg, 1500).locked, true);
+});
+// 리셋이 지나면 조회값은 다음 주를 가리킨다. 그걸로 밀면 잠금이 매주 다시 걸렸다.
+test('reconcilePickedReset: 주가 넘어가도 잠금을 다시 걸지 않는다', () => {
+  const cfg = lockedOn({ activePickedResetAt: R1 });
+  assert.equal(reconcilePickedReset(cfg, R2, R1 + 1), false);
+  assert.equal(cfg.activePickedResetAt, R1);
+  assert.equal(pickLock(cfg, R1 + 1).locked, false);
+});
+test('reconcilePickedReset: 리셋 시각이 1초쯤 흔들려도 그대로 둔다', () => {
+  const cfg = lockedOn({ activePickedResetAt: R1 });
+  assert.equal(reconcilePickedReset(cfg, R1 + 900, 1500), false);
+  assert.equal(cfg.activePickedResetAt, R1);
+});
+test('reconcilePickedReset: 잠긴 동안 제공자를 바꾸면 새 제공자의 리셋 시각으로 옮긴다', () => {
+  const cfg = lockedOn({ activePickedResetAt: R1, source: 'codex' });
+  assert.equal(reconcilePickedReset(cfg, 3000, 1500), true);
+  assert.deepEqual([cfg.activePickedResetAt, cfg.activePickedResetSource], [3000, 'codex']);
+});
+test('reconcilePickedReset: 잠금이 풀린 뒤 제공자를 바꿔도 다시 잠그지 않는다', () => {
+  const cfg = lockedOn({ activePickedResetAt: R1, source: 'codex' });
+  assert.equal(reconcilePickedReset(cfg, R2, R1 + 1), false);
+  assert.equal(pickLock(cfg, R1 + 1).locked, false);
+});
+test('reconcilePickedReset: 이미 지난 리셋 시각으로는 채우지 않는다', () => {
+  const cfg = lockedOn({ activePickedResetAt: null });
+  assert.equal(reconcilePickedReset(cfg, 1000, 1500), false);
+  assert.equal(cfg.activePickedResetAt, null);
+});
+test('reconcilePickedReset: 제공자 기록이 없던 설정은 지금 제공자로 채운다', () => {
+  const cfg = lockedOn({ activePickedResetAt: R1, activePickedResetSource: null });
+  assert.equal(reconcilePickedReset(cfg, R1, 1500), false);
+  assert.equal(cfg.activePickedResetSource, 'claude');
+});
+test('reconcilePickedReset: 활성 몬스터가 없으면 건드리지 않는다', () =>
+  assert.equal(reconcilePickedReset(lockedOn({ activeMonster: null, activePickedResetAt: null }), R1, 1500), false));
 
 test('mergeStamps: 처음 본 종만 찍고 변경 여부를 알려준다', () => {
   const bag = { pichu: 100 };

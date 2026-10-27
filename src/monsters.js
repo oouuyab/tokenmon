@@ -72,6 +72,24 @@ function pickLock(cfg, now = Date.now()) {
   return { locked, unlockAt: locked ? until : null };
 }
 
+// 고를 때 리셋 시각을 몰랐던 잠금만 새 조회로 채운다. 오래된 캐시로 고르면 이미 지난
+// 리셋 시각밖에 없어 그대로 적으면 곧바로 풀리므로, 고를 때는 비워 두고 여기서 채운다.
+//
+// 이미 적힌 시각을 새 조회값으로 밀면 안 된다 — 리셋이 지나면 조회값은 다음 주를
+// 가리키고, 그걸로 밀면 풀려야 할 잠금이 매주 다시 걸린다. 제공자를 바꾼 경우만
+// 예외로, 아직 잠겨 있을 때 새 제공자의 리셋 시각으로 옮긴다. 바뀌었으면 true.
+function reconcilePickedReset(cfg, resetAt, now = Date.now()) {
+  if (!cfg.activeMonster || typeof resetAt !== 'number' || resetAt <= now) return false;
+  if (cfg.activePickedResetSource == null) cfg.activePickedResetSource = cfg.source;
+  const until = cfg.activePickedResetAt;
+  const unknown = typeof until !== 'number';
+  const moved = cfg.activePickedResetSource !== cfg.source && until > now;
+  if (!unknown && !moved) return false;
+  cfg.activePickedResetAt = resetAt;
+  cfg.activePickedResetSource = cfg.source;
+  return true;
+}
+
 // 처음 본 종만 시각을 찍는다. 이미 있는 기록은 덮지 않는다 — 언제 처음
 // 만났는지가 남아야 도감다워진다. 무언가 새로 찍었으면 true.
 function mergeStamps(target, slugs, now) {
@@ -131,6 +149,6 @@ function addCustomMonster(cfg, name, stages) {
 
 module.exports = {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, mergeStamps,
+  nextFloor, reachedSlugs, pickLock, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 };

@@ -6,7 +6,7 @@ const { stageIndex } = require('./evolution');
 const { buildIndex, koName } = require('./dex');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock: lockOf, mergeStamps,
+  nextFloor, reachedSlugs, pickLock: lockOf, reconcilePickedReset: reconcileOf, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('./monsters');
 const { downloadGif } = require('./pokeapi');
@@ -44,6 +44,9 @@ function pushState() {
 
 const weeklyResetAt = () => (lastUsage && lastUsage.weekly ? lastUsage.weekly.resetsAt ?? null : null);
 
+// 오래된 캐시로 고른 직후 새 조회가 들어오면 비워 둔 리셋 시각을 채운다
+const reconcilePickedReset = () => reconcileOf(cfg, weeklyResetAt());
+
 // 한 주에 한 마리를 끝까지 키우자는 규칙. 고른 시점의 주간 리셋 시각을 적어두고,
 // 그 시각이 지나 새 주가 시작되기 전에는 다른 계통으로 바꿀 수 없게 막는다.
 // 소진율을 아직 모르면 막지 않는다 — 조회에 실패했다고 갇히면 곤란하다.
@@ -52,7 +55,10 @@ const pickLock = () => lockOf(cfg);
 // 도감 인정 시작선은 syncDex가 id가 달라진 것을 보고 알아서 다시 잡는다
 function setActiveMonster(id) {
   cfg.activeMonster = id;
-  cfg.activePickedResetAt = weeklyResetAt();
+  // 이미 지난 리셋 시각은 잠금이 되지 못한다 — 비워 두면 다음 조회가 채운다
+  const resetAt = weeklyResetAt();
+  cfg.activePickedResetAt = typeof resetAt === 'number' && resetAt > Date.now() ? resetAt : null;
+  cfg.activePickedResetSource = cfg.source;
 }
 
 // 활성 몬스터의 도감 인정 시작선. 몬스터를 갈아타면 다시 잡는다. 설정에 두지 않는
@@ -98,13 +104,19 @@ async function poll() {
   try {
     if (cfg.source === 'codex') {
       const u = await fetchCodexUsage();
-      if (u) { lastUsage = u; lastPercent = u.weekly.pct; persistUsage(u); }
+      if (u) {
+        lastUsage = u;
+        lastPercent = u.weekly.pct;
+        reconcilePickedReset();
+        persistUsage(u);
+      }
       lastError = u == null;
     } else if (Date.now() >= claudeBackoffUntil) {
       const u = await fetchClaudeUsage();
       lastUsage = u;
       lastPercent = u.weekly.pct;
       lastError = false;
+      reconcilePickedReset();
       persistUsage(u);
     }
     // 백오프 중이면 호출 없이 마지막 값 유지
@@ -345,6 +357,7 @@ app.whenReady().then(() => {
   if (cached) {
     lastUsage = cached;
     lastPercent = cached.weekly.pct; // 첫 폴링 전/백오프 중에도 마지막 값으로 표시
+    if (reconcilePickedReset()) saveConfig(configFile(), cfg);
   }
   persistDex(); // 재시작 직후에도 마지막으로 알던 단계까지는 기록해둔다
   tray = new Tray(nativeImage.createEmpty());
