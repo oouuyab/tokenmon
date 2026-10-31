@@ -1,7 +1,9 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, dialog } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { loadConfig, saveConfig, cachedUsage, isCacheFresh, isCustomId } = require('./config');
+const { CLOUD_DIR, mergeDex, readCloudDex, writeCloudDex } = require('./dexsync');
 const { stageIndex } = require('./evolution');
 const { buildIndex, koName } = require('./dex');
 const {
@@ -77,10 +79,18 @@ function syncDex() {
   return changed;
 }
 
+// 다른 기기에서 쌓은 기록도 iCloud Drive를 거쳐 합친다. 합친 결과를 그대로 자기
+// 파일에 올리므로, 이 기기 설정이 지워져도 다음 실행 때 기록이 되살아난다.
 function persistDex() {
-  if (!syncDex()) return;
-  saveConfig(configFile(), cfg);
-  pushDex();
+  let changed = syncDex();
+  for (const other of readCloudDex(CLOUD_DIR)) {
+    if (mergeDex(cfg.dex, other)) changed = true;
+  }
+  if (changed) {
+    saveConfig(configFile(), cfg);
+    pushDex();
+  }
+  writeCloudDex(CLOUD_DIR, cfg.deviceId, cfg.dex);
 }
 
 let claudeBackoffUntil = 0; // usage API가 429를 주면 retry-after까지 조회 중단
@@ -340,6 +350,10 @@ function watchEvents() {
 app.whenReady().then(() => {
   if (app.dock) app.dock.hide();
   cfg = loadConfig(configFile());
+  if (!cfg.deviceId) {
+    cfg.deviceId = crypto.randomUUID();
+    saveConfig(configFile(), cfg);
+  }
   // 캐시가 지금 소스의 값일 때만 복원 (다른 소스 값이면 첫 폴링 때까지 비워둔다)
   const cached = cachedUsage(cfg);
   if (cached) {

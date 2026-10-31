@@ -24,6 +24,9 @@ const DEFAULTS = {
   dexFreeMode: false,
   // 도감 안내를 끝까지 봤는지
   dexOnboarded: false,
+  // iCloud Drive에 올리는 이 기기의 도감 파일 이름 (dex-{deviceId}.json).
+  // 첫 실행 때 메인이 만들어 넣는다.
+  deviceId: null,
 };
 
 // 소스별 캐시로 대체된 옛 필드 — 남아 있으면 헷갈리므로 읽을 때 걷어낸다
@@ -41,7 +44,7 @@ const CUSTOM_PREFIX = 'custom-';
 const MAIN_OWNED_KEYS = [
   'petPosition', 'usageCache', 'dex', 'activePickedResetAt',
   'dexEnabled', 'dexFreeMode', 'dexOnboarded',
-  'monsters', 'activeMonster',
+  'monsters', 'activeMonster', 'deviceId',
 ];
 
 const SLUG = /^[a-z0-9-]+$/;
