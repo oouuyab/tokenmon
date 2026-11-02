@@ -1,8 +1,11 @@
 const { execFile } = require('node:child_process');
+const os = require('node:os');
 
+// Claude Code는 계정 이름을 OS 사용자로 저장한다. 다른 도구가 같은 서비스 이름으로
+// 항목을 만들면 -s만으로는 그쪽이 먼저 잡혀 무효 토큰을 읽는다 (2026-10-30, acct=unknown).
 function keychainCredentials() {
   return new Promise((resolve, reject) => {
-    execFile('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+    execFile('security', ['find-generic-password', '-s', 'Claude Code-credentials', '-a', os.userInfo().username, '-w'],
       (err, stdout) => {
         if (err) return reject(err);
         try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
