@@ -81,8 +81,11 @@ function pickLock(cfg, now = Date.now()) {
 //
 // 0%는 보통 새 주를 시작하기 전이라 알로 둔다 — 리셋 직후 지난주 단계가 남지 않게.
 // 하지만 이번 주에 고른 뒤라면 키우기 시작한 것이므로 0%여도 첫 단계를 보여준다.
+// 리셋이 지난 조회값은 지난주 것이라 단계에도 도감 기록에도 쓰지 않는다.
 function petPercentFor(usage, cfg, now = Date.now()) {
-  const pct = usage && usage.weekly ? usage.weekly.pct : null;
+  const weekly = usage && usage.weekly;
+  if (weekly && typeof weekly.resetsAt === 'number' && weekly.resetsAt <= now) return null;
+  const pct = weekly ? weekly.pct : null;
   if (pct > 0) return pct;
   if (pct === 0 && pickedThisWeek(cfg, now)) return 0;
   return null;

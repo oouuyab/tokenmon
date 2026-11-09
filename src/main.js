@@ -46,12 +46,6 @@ function pushState() {
 
 const weeklyResetAt = () => (lastUsage && lastUsage.weekly ? lastUsage.weekly.resetsAt ?? null : null);
 
-function clearPetAfterReset() {
-  if (lastUsage?.weekly?.resetsAt != null && lastUsage.weekly.resetsAt <= Date.now()) {
-    lastPercent = null;
-  }
-}
-
 // 오래된 캐시로 고른 직후 새 조회가 들어오면 비워 둔 리셋 시각을 채운다
 const reconcilePickedReset = () => reconcileOf(cfg, weeklyResetAt());
 
@@ -167,7 +161,7 @@ async function poll() {
       lastError = true; // 마지막 성공 값 유지
     }
   }
-  clearPetAfterReset();
+  lastPercent = petPercentFor(lastUsage, cfg);
   persistDex();
   updateTray();
   pushState();
@@ -444,7 +438,6 @@ ipcMain.on('dex-onboarded', () => {
 function commitMonsters() {
   // 0%에서 막 골랐으면 알에서 첫 단계로 바뀌고 도감에도 남아야 한다 — 다음 폴링까지 기다리지 않는다
   lastPercent = petPercentFor(lastUsage, cfg);
-  clearPetAfterReset(); // 리셋이 지난 낡은 조회값으로 지난주 단계를 되살리지 않는다
   syncDex();
   saveConfig(configFile(), cfg);
   updateTray();

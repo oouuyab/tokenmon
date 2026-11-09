@@ -176,6 +176,23 @@ test('petPercentFor: 조회한 리셋 시각이 고를 때와 조금 달라도 �
 });
 test('petPercentFor: 사용량을 모르면 알이다', () =>
   assert.equal(petPercentFor(null, picked, 1500), null));
+// 리셋이 지난 조회값은 지난주 것이다. 새 조회가 오기 전(재시작 직후, 429 백오프 중)에도 쓰면 안 된다.
+test('petPercentFor: 리셋이 지난 조회값이면 사용률이 있어도 알이다', () =>
+  assert.equal(petPercentFor(weekly(42, 1000), picked, 1500), null));
+test('petPercentFor: 고른 주라도 리셋이 지난 0%는 알이다', () =>
+  assert.equal(petPercentFor(weekly(0, 1000), { ...picked, activePickedResetAt: 3000 }, 1500), null));
+test('petPercentFor: 리셋 시각을 모르면 사용률을 그대로 쓴다', () =>
+  assert.equal(petPercentFor(weekly(42, null), picked, 1500), 42));
+// 앱을 다시 켜면 시작선이 비고 캐시만 남는다. 리셋이 지난 캐시가 첫 단계 구간이면
+// 지난주 값인데도 시작선이 -1로 잡혀 피츄가 이번 주에 잡은 것으로 기록됐다.
+test('petPercentFor: 재시작 직후 리셋이 지난 캐시로는 도감에 기록하지 않는다', () => {
+  // main.js syncDex와 같은 순서: 사용률이 없으면 기록하지 않는다
+  const caughtOnRestart = (pct) =>
+    (pct == null ? [] : reachedSlugs(pichuLine, pct, nextFloor(pichuLine, pct, null)));
+  const stale = weekly(10, 1000);
+  assert.deepEqual(caughtOnRestart(stale.weekly.pct), ['pichu']);
+  assert.deepEqual(caughtOnRestart(petPercentFor(stale, picked, 1500)), []);
+});
 
 const R1 = 2000;
 const R2 = R1 + 7 * 24 * 3600 * 1000;
