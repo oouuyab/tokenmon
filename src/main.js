@@ -8,7 +8,7 @@ const { buildIndex, koName } = require('./dex');
 const { syncDir, mergeDex, readPeers, ownedByOther, writeOwn } = require('./dex-sync');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock: lockOf, reconcilePickedReset: reconcileOf, mergeStamps,
+  nextFloor, reachedSlugs, pickLock: lockOf, petPercentFor, reconcilePickedReset: reconcileOf, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('./monsters');
 const { downloadGif } = require('./pokeapi');
@@ -45,8 +45,6 @@ function pushState() {
 }
 
 const weeklyResetAt = () => (lastUsage && lastUsage.weekly ? lastUsage.weekly.resetsAt ?? null : null);
-// 주간 사용률이 0이면 새 주를 시작하기 전까지 알로 보여준다.
-const petPercentOf = (u) => (u && u.weekly && u.weekly.pct > 0) ? u.weekly.pct : null;
 
 function clearPetAfterReset() {
   if (lastUsage?.weekly?.resetsAt != null && lastUsage.weekly.resetsAt <= Date.now()) {
@@ -146,17 +144,18 @@ async function poll() {
       const u = await fetchCodexUsage();
       if (u) {
         lastUsage = u;
-        lastPercent = petPercentOf(u);
+        // 0%여도 이번 주에 골랐으면 첫 단계다. 고른 주인지는 여기서 채운 리셋 시각으로 보므로 그 뒤에 센다
         reconcilePickedReset();
+        lastPercent = petPercentFor(u, cfg);
         persistUsage(u);
       }
       lastError = u == null;
     } else if (Date.now() >= claudeBackoffUntil) {
       const u = await fetchClaudeUsage();
       lastUsage = u;
-      lastPercent = petPercentOf(u);
       lastError = false;
       reconcilePickedReset();
+      lastPercent = petPercentFor(u, cfg);
       persistUsage(u);
     }
     // 백오프 중이면 호출 없이 마지막 값 유지
@@ -401,8 +400,8 @@ app.whenReady().then(() => {
   const cached = cachedUsage(cfg);
   if (cached) {
     lastUsage = cached;
-    lastPercent = petPercentOf(cached); // 첫 폴링 전/백오프 중에도 마지막 상태로 표시
     if (reconcilePickedReset()) saveConfig(configFile(), cfg);
+    lastPercent = petPercentFor(cached, cfg); // 첫 폴링 전/백오프 중에도 마지막 상태로 표시
   }
   persistDex(); // 재시작 직후에도 마지막으로 알던 단계까지는 기록해둔다
   tray = new Tray(nativeImage.createEmpty());
@@ -443,8 +442,12 @@ ipcMain.on('dex-onboarded', () => {
 // 들고 있어 목록을 저장하면 그 사이 등록된 몬스터를 덮는다. 그래서 목록을 바꾸는
 // 경로를 전부 이 아래 핸들러로 모으고, 창은 결과만 받아 설정을 다시 읽는다.
 function commitMonsters() {
+  // 0%에서 막 골랐으면 알에서 첫 단계로 바뀌고 도감에도 남아야 한다 — 다음 폴링까지 기다리지 않는다
+  lastPercent = petPercentFor(lastUsage, cfg);
+  clearPetAfterReset(); // 리셋이 지난 낡은 조회값으로 지난주 단계를 되살리지 않는다
   syncDex();
   saveConfig(configFile(), cfg);
+  updateTray();
   pushState();
   pushPanel();
   pushDex();
@@ -538,7 +541,7 @@ ipcMain.on('config-changed', () => {
   if (sourceChanged) {
     const cached = cachedUsage(cfg);
     lastUsage = cached;
-    lastPercent = petPercentOf(cached);
+    lastPercent = petPercentFor(cached, cfg);
     lastError = false;
   }
   persistDex(); // 활성 몬스터나 임계값이 바뀌었을 수 있다

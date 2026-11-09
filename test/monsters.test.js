@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { buildIndex } = require('../src/dex');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, reconcilePickedReset, mergeStamps,
+  nextFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('../src/monsters');
 
@@ -152,6 +152,30 @@ test('pickLock: 아직 한 마리도 없으면 골라야 한다', () =>
   assert.equal(pickLock({ ...picked, activeMonster: null }, 1500).locked, false));
 test('pickLock: 리셋 시각을 모르면 막지 않는다', () =>
   assert.equal(pickLock({ ...picked, activePickedResetAt: null }, 1500).locked, false));
+
+const weekly = (pct, resetsAt = 2000) => ({ weekly: { pct, resetsAt } });
+
+test('petPercentFor: 이번 주에 골랐으면 0%여도 첫 단계를 보여준다', () =>
+  assert.equal(petPercentFor(weekly(0), picked, 1500), 0));
+test('petPercentFor: 고르기 전이면 0%는 알이다', () =>
+  assert.equal(petPercentFor(weekly(0), { ...picked, activeMonster: null }, 1500), null));
+test('petPercentFor: 고른 주의 리셋이 지났으면 0%는 알이다', () =>
+  assert.equal(petPercentFor(weekly(0, 2000 + 7 * 24 * 3600 * 1000), picked, 2000), null));
+test('petPercentFor: 사용률이 있으면 그대로 쓴다', () =>
+  assert.equal(petPercentFor(weekly(42), { ...picked, activeMonster: null }, 1500), 42));
+// 잠금은 도감 규칙이지만 "골랐다"는 사실은 도감 설정과 상관없다.
+test('petPercentFor: 도감을 끄거나 둘러보는 중이어도 고른 주면 첫 단계다', () => {
+  assert.equal(petPercentFor(weekly(0), { ...picked, dexEnabled: false }, 1500), 0);
+  assert.equal(petPercentFor(weekly(0), { ...picked, dexFreeMode: true }, 1500), 0);
+});
+// usage API의 resetsAt은 고를 때 적은 시각과 1초 안팎 다를 수 있다.
+test('petPercentFor: 조회한 리셋 시각이 고를 때와 조금 달라도 첫 단계다', () => {
+  const cfg = { ...picked, activePickedResetAt: 1786193999071 };
+  assert.equal(petPercentFor(weekly(0, 1786194000292), cfg, 1786000000000), 0);
+  assert.equal(petPercentFor(weekly(0, 1786193998500), cfg, 1786000000000), 0);
+});
+test('petPercentFor: 사용량을 모르면 알이다', () =>
+  assert.equal(petPercentFor(null, picked, 1500), null));
 
 const R1 = 2000;
 const R2 = R1 + 7 * 24 * 3600 * 1000;

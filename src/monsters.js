@@ -60,16 +60,32 @@ function reachedSlugs(monster, percent, floor = -1) {
   return stageSlugs(monster).slice(floor + 1, idx + 1);
 }
 
-// 한 주에 한 마리. 고를 때 적어둔 리셋 시각이 아직 오지 않았으면 잠근다.
+// 이번 주에 골랐는지 — 고를 때 적어둔 리셋 시각이 아직 오지 않았으면 고른 주다.
 //
 // 지금 조회값과 같은지로 보면 안 된다 — usage API가 같은 리셋을 가리키면서도
-// 매번 1초 안팎으로 다른 값을 주기 때문에, 폴링이 한 번만 돌아도 잠금이 저절로
-// 풀린다. 시각이 지났는지로 봐야 흔들리지 않는다.
-function pickLock(cfg, now = Date.now()) {
+// 매번 1초 안팎으로 다른 값을 주기 때문에, 폴링이 한 번만 돌아도 판정이 저절로
+// 뒤집힌다. 시각이 지났는지로 봐야 흔들리지 않는다. 리셋 시각은 도감 설정과
+// 상관없이 고를 때마다 적히므로 여기서는 도감 설정을 보지 않는다.
+function pickedThisWeek(cfg, now = Date.now()) {
   const until = cfg && cfg.activePickedResetAt;
-  const locked = !!(cfg && cfg.dexEnabled) && !(cfg && cfg.dexFreeMode)
-    && !!(cfg && cfg.activeMonster) && typeof until === 'number' && now < until;
-  return { locked, unlockAt: locked ? until : null };
+  return !!(cfg && cfg.activeMonster) && typeof until === 'number' && now < until;
+}
+
+// 한 주에 한 마리. 도감을 규칙대로 쓰는 중이고 이번 주에 골랐으면 잠근다.
+function pickLock(cfg, now = Date.now()) {
+  const locked = !!(cfg && cfg.dexEnabled) && !(cfg && cfg.dexFreeMode) && pickedThisWeek(cfg, now);
+  return { locked, unlockAt: locked ? cfg.activePickedResetAt : null };
+}
+
+// 펫에 보여줄 주간 사용률. null이면 알이다.
+//
+// 0%는 보통 새 주를 시작하기 전이라 알로 둔다 — 리셋 직후 지난주 단계가 남지 않게.
+// 하지만 이번 주에 고른 뒤라면 키우기 시작한 것이므로 0%여도 첫 단계를 보여준다.
+function petPercentFor(usage, cfg, now = Date.now()) {
+  const pct = usage && usage.weekly ? usage.weekly.pct : null;
+  if (pct > 0) return pct;
+  if (pct === 0 && pickedThisWeek(cfg, now)) return 0;
+  return null;
 }
 
 // 고를 때 리셋 시각을 몰랐던 잠금만 새 조회로 채운다. 오래된 캐시로 고르면 이미 지난
@@ -149,6 +165,6 @@ function addCustomMonster(cfg, name, stages) {
 
 module.exports = {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, reconcilePickedReset, mergeStamps,
+  nextFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 };
