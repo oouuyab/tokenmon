@@ -51,6 +51,14 @@ function nextFloor(monster, percent, prevFloor) {
   return prevFloor;
 }
 
+// 시작선을 몬스터와 사용량 소스 둘에 묶는다. 둘 중 하나라도 바뀌면 재시작처럼 지금
+// 단계를 물려받는다 — 소스마다 사용률이 따로라, 섞어 세면 소스를 오가기만 해도
+// 진화형을 얻는다.
+function trackFloor(prev, { id, source }, monster, percent) {
+  const same = !!prev && prev.id === id && prev.source === source;
+  return { id, source, floor: nextFloor(monster, percent, same ? prev.floor : null) };
+}
+
 // 시작선 위로 올라간 단계들. 중간 단계를 함께 돌려주는 이유는 폴링이 5분 간격이라
 // 10%에서 80%로 뛴 사이를 못 보고 지나칠 수 있기 때문이다 — 그러면 라이츄는
 // 도달했는데 피카츄는 못 만난 도감이 된다.
@@ -168,6 +176,6 @@ function addCustomMonster(cfg, name, stages) {
 
 module.exports = {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
+  nextFloor, trackFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 };

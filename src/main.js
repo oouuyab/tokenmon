@@ -8,7 +8,7 @@ const { buildIndex, koName } = require('./dex');
 const { syncDir, mergeDex, readPeers, ownedByOther, writeOwn } = require('./dex-sync');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock: lockOf, petPercentFor, reconcilePickedReset: reconcileOf, mergeStamps,
+  trackFloor, reachedSlugs, pickLock: lockOf, petPercentFor, reconcilePickedReset: reconcileOf, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('./monsters');
 const { downloadGif } = require('./pokeapi');
@@ -63,11 +63,11 @@ function setActiveMonster(id) {
   cfg.activePickedResetSource = cfg.source;
 }
 
-// 활성 몬스터의 도감 인정 시작선. 몬스터를 갈아타면 다시 잡는다. 설정에 두지 않는
-// 이유는 앱을 껐다 켜면 지금 단계를 물려받은 것으로 보는 편이 안전해서다 —
-// 이미 남은 기록은 그대로고, 새로 공짜로 얻는 것만 막힌다.
-let dexFloorId = null;
-let dexFloor = null;
+// 활성 몬스터의 도감 인정 시작선 { id, source, floor }. 앱을 다시 켜거나, 몬스터를
+// 갈아타거나, 사용량 소스를 바꾸면 지금 단계를 물려받은 것으로 보고 다시 잡는다.
+// 설정에 두지 않는 이유는 그편이 안전해서다 — 이미 남은 기록은 그대로고, 새로
+// 공짜로 얻는 것만 막힌다.
+let dexTrack = null;
 
 // 도감 기록은 메인만 쓴다. 렌더러가 각자 남기면 설정을 저장할 때마다 서로의
 // 기록을 덮으므로, 렌더러는 읽기만 하고 여기서만 갱신한다.
@@ -78,9 +78,8 @@ function syncDex() {
   const id = cfg.activeMonster;
   const active = cfg.monsters[id];
   if (active && !isCustomId(id) && lastPercent != null) {
-    if (dexFloorId !== id) { dexFloorId = id; dexFloor = null; }
-    dexFloor = nextFloor(active, lastPercent, dexFloor);
-    if (mergeStamps(cfg.dex.caught, reachedSlugs(active, lastPercent, dexFloor), now)) changed = true;
+    dexTrack = trackFloor(dexTrack, { id, source: cfg.source }, active, lastPercent);
+    if (mergeStamps(cfg.dex.caught, reachedSlugs(active, lastPercent, dexTrack.floor), now)) changed = true;
   }
   return changed;
 }

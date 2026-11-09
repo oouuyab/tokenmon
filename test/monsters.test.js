@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { buildIndex } = require('../src/dex');
 const {
   monsterIdFor, buildMonster, stageSlugs, seenSlugsFor,
-  nextFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
+  nextFloor, trackFloor, reachedSlugs, pickLock, petPercentFor, reconcilePickedReset, mergeStamps,
   setThresholds, removeMonster, addCustomMonster,
 } = require('../src/monsters');
 
@@ -128,6 +128,33 @@ test('미뇽으로 키우다 파이리를 추가해도 파이리 계통은 늘�
   assert.deepEqual(Object.keys(caught).sort(),
     ['charizard', 'charmander', 'charmeleon', 'dragonair', 'dratini']);
 });
+
+// 같은 몬스터를 [소스, 사용률] 순서대로 키우며 도감에 남는 종을 모은다 (main.js syncDex와 같은 순서)
+const caughtAlong = (steps, id = 'pichu-pikachu-raichu') => {
+  const caught = {};
+  let track = null;
+  steps.forEach(([source, pct], i) => {
+    track = trackFloor(track, { id, source }, pichuLine, pct);
+    mergeStamps(caught, reachedSlugs(pichuLine, pct, track.floor), i + 1);
+  });
+  return Object.keys(caught);
+};
+
+test('trackFloor: 처음이면 지금 단계를 물려받는다', () =>
+  assert.deepEqual(trackFloor(null, { id: 'p', source: 'claude' }, pichuLine, 50),
+    { id: 'p', source: 'claude', floor: 1 }));
+test('trackFloor: 같은 소스에서 올라간 단계는 인정한다', () =>
+  assert.deepEqual(caughtAlong([['claude', 10], ['claude', 80]]), ['pichu', 'pikachu', 'raichu']));
+test('trackFloor: 몬스터를 바꾸면 시작선을 다시 잡는다', () => {
+  const prev = { id: 'a', source: 'claude', floor: -1 };
+  assert.equal(trackFloor(prev, { id: 'b', source: 'claude' }, pichuLine, 50).floor, 1);
+});
+// 소스마다 사용률이 따로라, 높은 쪽으로 바꾸기만 해도 중간 단계가 한꺼번에 기록됐다
+test('trackFloor: 사용률이 높은 소스로 바꾸면 그 단계까지는 물려받는다', () =>
+  assert.deepEqual(caughtAlong([['claude', 10], ['codex', 80]]), ['pichu']));
+// 낮은 소스로 갔다 오면 리셋으로 보고 시작선이 풀려, 돌아오기만 해도 전 단계가 기록됐다
+test('trackFloor: 소스를 오가기만 해서는 진화형을 얻지 못한다', () =>
+  assert.deepEqual(caughtAlong([['claude', 80], ['codex', 5], ['claude', 80]]), ['pichu']));
 
 const picked = {
   dexEnabled: true, dexFreeMode: false,
