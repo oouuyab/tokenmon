@@ -138,9 +138,7 @@ async function poll() {
       const u = await fetchCodexUsage();
       if (u) {
         lastUsage = u;
-        // 0%여도 이번 주에 골랐으면 첫 단계다. 고른 주인지는 여기서 채운 리셋 시각으로 보므로 그 뒤에 센다
         reconcilePickedReset();
-        lastPercent = petPercentFor(u, cfg);
         persistUsage(u);
       }
       lastError = u == null;
@@ -149,7 +147,6 @@ async function poll() {
       lastUsage = u;
       lastError = false;
       reconcilePickedReset();
-      lastPercent = petPercentFor(u, cfg);
       persistUsage(u);
     }
     // 백오프 중이면 호출 없이 마지막 값 유지
@@ -161,6 +158,9 @@ async function poll() {
       lastError = true; // 마지막 성공 값 유지
     }
   }
+  // 0%여도 이번 주에 골랐으면 첫 단계다. 고른 주인지는 위에서 채운 리셋 시각으로 보므로
+  // reconcile 뒤인 여기서 한 번만 센다. 조회에 실패했거나 백오프 중이면 마지막 값으로 다시
+  // 세는데, 그 값의 리셋이 지났으면 알로 돌아간다.
   lastPercent = petPercentFor(lastUsage, cfg);
   persistDex();
   updateTray();
